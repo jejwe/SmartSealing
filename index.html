@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线智能盖章</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .file-input-styled::file-selector-button {
+            margin-right: 1rem; padding: 0.5rem 1rem; border-radius: 0.375rem;
+            border-width: 0; font-size: 0.875rem; font-weight: 600;
+            cursor: pointer; transition: background-color 0.2s;
+        }
+        .file-input-doc::file-selector-button { background-color: #e0f2fe; color: #0369a1; }
+        .file-input-doc:hover::file-selector-button { background-color: #bae6fd; }
+        .file-input-stamp::file-selector-button { background-color: #dcfce7; color: #15803d; }
+        .file-input-stamp:hover::file-selector-button { background-color: #bbf7d0; }
+        .disabled-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.5); z-index: 10; cursor: not-allowed;
+        }
+        .tooltip { position: relative; display: inline-block; }
+        .tooltip .tooltiptext {
+            visibility: hidden; width: 140px; background-color: #555; color: #fff;
+            text-align: center; border-radius: 6px; padding: 5px 0; position: absolute;
+            z-index: 1; bottom: 125%; left: 50%; margin-left: -70px; opacity: 0; transition: opacity 0.3s;
+        }
+        .tooltip .tooltiptext::after {
+            content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+            border-width: 5px; border-style: solid; border-color: #555 transparent transparent transparent;
+        }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+        #canvasContainerParent {
+            min-height: 450px; max-height: 70vh; overflow: hidden;
+            width: 100%; margin-bottom: 1rem;
+        }
+        .zoom-btn {
+            background-color: #fff; border: 1px solid #d1d5db; 
+            padding: 0.375rem 0.75rem; border-radius: 0.375rem; 
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); 
+            font-size: 0.875rem; font-weight: 500; color: #374151; 
+            transition: all 0.15s ease-in-out;
+        }
+        .zoom-btn:hover { background-color: #f9fafb; border-color: #9ca3af; }
+        .zoom-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .zoom-btn svg { width: 1.25rem; height: 1.25rem; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 md:p-8 max-w-5xl">
+        <header class="text-center mb-8 md:mb-12">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">在线智能盖章</h1>
+            <p class="text-gray-600 mt-2">轻松为您的图片和PDF文件添加电子印章</p>
+        </header>
+
+        <div class="flex flex-col items-center">
+            <div class="w-full mb-4">
+                <div id="canvasContainerParent" class="bg-gray-200 p-2 rounded-xl shadow-inner flex justify-center items-center">
+                  <div id="canvasContainer" class="h-full flex justify-center items-center">
+                    <canvas id="stampCanvasElement" class="hidden shadow-md rounded-md"></canvas>
+                    <div id="canvasPlaceholder" class="text-center text-gray-500 text-lg p-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        请先上传需要盖章的文档
+                        <span class="block text-sm text-gray-400 mt-1">(支持图片和PDF格式)</span>
+                    </div>
+                  </div>
+                </div>
+                <div id="zoomControlsContainer" class="mt-3 flex justify-center items-center space-x-2 hidden">
+                    <button id="zoomOutBtn" title="缩小视图 (或使用鼠标滚轮)" class="zoom-btn flex items-center" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" /></svg>
+                    </button>
+                    <button id="resetZoomBtn" title="重置视图" class="zoom-btn flex items-center" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                    </button>
+                    <button id="zoomInBtn" title="放大视图 (或使用鼠标滚轮)" class="zoom-btn flex items-center" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    </button>
+                    <span class="text-xs text-gray-500 ml-2">(按住 Alt + 鼠标拖动可平移视图)</span>
+                </div>
+            </div>
+
+            <div class="w-full md:max-w-md bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-6 text-gray-700 border-b pb-3">操作面板</h2>
+                
+                <div class="mb-6">
+                    <label for="docFile" class="block text-sm font-medium text-gray-700 mb-1">1. 上传盖章文件 (图片/PDF)</label>
+                    <input type="file" id="docFile" accept="image/*,application/pdf" class="file-input-styled file-input-doc block w-full text-sm text-gray-500 cursor-pointer rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+                    <p id="docFileName" class="text-xs text-gray-500 mt-1 truncate" aria-live="polite">&nbsp;</p>
+                </div>
+
+                <div class="mb-6 relative">
+                    <label for="stampFile" class="block text-sm font-medium text-gray-700 mb-1">2. 上传印章图片 (推荐PNG)</label>
+                    <input type="file" id="stampFile" accept="image/png,image/jpeg,image/gif" class="file-input-styled file-input-stamp block w-full text-sm text-gray-500 cursor-pointer rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500" disabled>
+                    <p id="stampFileName" class="text-xs text-gray-500 mt-1 truncate" aria-live="polite">&nbsp;</p>
+                    <div id="stampFileDisabledOverlay" class="disabled-overlay rounded-md hidden"></div>
+                     <div class="tooltip" style="position: absolute; top: -10px; right: 0;">
+                        <span class="text-xs text-gray-400 cursor-help">(?)</span>
+                        <span class="tooltiptext">请先上传盖章文件</span>
+                    </div>
+                </div>
+
+                <div class="mb-6 relative">
+                    <label for="stampOpacity" class="block text-sm font-medium text-gray-700 mb-1">3. 调整印章透明度</label>
+                    <input type="range" id="stampOpacity" min="0.1" max="1" step="0.05" value="0.9" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" disabled>
+                    <div id="stampOpacityDisabledOverlay" class="disabled-overlay rounded-lg hidden"></div>
+                </div>
+
+                <div class="space-y-3">
+                     <p id="stampActionPlaceholder" class="text-sm text-gray-400 text-center py-2">选中印章后可进行操作</p>
+                    <button id="downloadBtn" class="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md shadow-lg disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed transition duration-150 ease-in-out text-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        确认并下载
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-10 md:mt-12 bg-white p-6 md:p-8 rounded-xl shadow-lg w-full md:max-w-3xl mx-auto">
+            <h2 class="text-xl md:text-2xl font-semibold mb-4 text-gray-700 border-b pb-3">工具简介</h2>
+            <p class="text-gray-600 mb-6 leading-relaxed">
+              本工具提供便捷的在线图片及PDF文件盖章服务。您可以通过缩放和平移功能调整文档视图，上传自定义的电子印章图片。印章上传后默认被选中，并显示操作控件，您可以通过拖拽、缩放、旋转等交互操作，将印章精确放置到文档的任意位置。
+            </p>
+            <h2 class="text-xl md:text-2xl font-semibold mb-4 text-gray-700 border-b pb-3">使用说明</h2>
+            <ol class="list-decimal list-inside text-gray-600 space-y-3 leading-relaxed">
+              <li><strong>上传文档：</strong>点击“上传盖章文件”按钮，选择您电脑中的图片或PDF文件。</li>
+              <li><strong>调整视图：</strong>使用预览区下方的缩放按钮或鼠标滚轮来放大/缩小文档视图。按住 <code class="bg-gray-200 px-1 rounded text-sm">Alt</code> 键并用鼠标拖动来平移文档视图。</li>
+              <li><strong>上传印章：</strong>文档上传完毕后，上传您的电子印章图片。印章添加后将默认被选中。</li>
+              <li><strong>调整印章：</strong>
+                <ul class="list-disc list-inside ml-5 mt-2 space-y-1">
+                  <li>鼠标悬停在印章上时光标会变为可拖动状态，直接拖动印章以移动位置。</li>
+                  <li>印章选中时，其左上角会显示红色的 <svg xmlns="http://www.w3.org/2000/svg" class="inline h-4 w-4 text-red-500 relative -top-0.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg> 删除图标，右上角会显示绿色的 <svg xmlns="http://www.w3.org/2000/svg" class="inline h-4 w-4 text-green-500 relative -top-0.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" /></svg> 复制图标，点击它们可执行相应操作。</li>
+                  <li>拖动印章边框上的其他控制点可以缩放印章，拖动顶部的旋转控制点可以旋转印章。</li>
+                  <li>使用“调整印章透明度”滑块，可以实时改变当前选中印章的透明度。</li>
+                </ul>
+              </li>
+              <li><strong>下载文件：</strong>所有印章调整满意后，点击“确认并下载”按钮。</li>
+            </ol>
+        </div>
+    </div>
+
+    <div id="messageModal" class="fixed inset-0 bg-gray-800 bg-opacity-60 hidden items-center justify-center p-4 z-50" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+            <h3 id="modal-title" class="text-lg font-medium leading-6 text-gray-900 mb-2">提示</h3>
+            <p id="messageText" class="text-sm text-gray-600"></p>
+            <div class="mt-5 sm:mt-6">
+                <button id="closeModalBtn" type="button" class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:text-sm">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Global Variables ---
+    let fabricCanvas;
+    let currentDocument = null; 
+    
+    const deleteIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23EF4444'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z' clip-rule='evenodd' /%3E%3C/svg%3E";
+    const cloneIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2322C55E'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z' clip-rule='evenodd' /%3E%3C/svg%3E";
+
+    let deleteControlImg = new Image(); // Use new Image() for onload
+    let cloneControlImg = new Image();
+    let controlsIconLoaded = { delete: false, clone: false };
+
+    deleteControlImg.onload = () => { controlsIconLoaded.delete = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
+    cloneControlImg.onload = () => { controlsIconLoaded.clone = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
+    deleteControlImg.src = deleteIconSVG;
+    cloneControlImg.src = cloneIconSVG;
+
+
+    if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    const docFileInput = document.getElementById('docFile');
+    const docFileNameDisplay = document.getElementById('docFileName');
+    const stampFileInput = document.getElementById('stampFile');
+    const stampFileNameDisplay = document.getElementById('stampFileName');
+    const stampOpacitySlider = document.getElementById('stampOpacity');
+    const stampActionPlaceholder = document.getElementById('stampActionPlaceholder');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const canvasElement = document.getElementById('stampCanvasElement');
+    const canvasPlaceholder = document.getElementById('canvasPlaceholder');
+    const canvasContainer = document.getElementById('canvasContainer'); 
+    const canvasContainerParent = document.getElementById('canvasContainerParent');
+    const messageModal = document.getElementById('messageModal');
+    const messageText = document.getElementById('messageText');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const stampFileDisabledOverlay = document.getElementById('stampFileDisabledOverlay');
+    const stampOpacityDisabledOverlay = document.getElementById('stampOpacityDisabledOverlay');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const resetZoomBtn = document.getElementById('resetZoomBtn');
+    const zoomControlsContainer = document.getElementById('zoomControlsContainer');
+
+    window.onload = () => {
+        initializeFabricCanvas();
+        setupEventListeners();
+        updateControlsState();
+        overrideFabricControls(); // Call this after canvas is initialized
+    };
+
+    window.onresize = () => {
+        if (fabricCanvas) {
+            resetCanvasView();
+        }
+    };
+    
+    function overrideFabricControls() {
+        const controlSize = 30; // Control icon visual size
+        const touchPadding = 8; // Extra padding for touch interaction
+        const finalControlHitSize = controlSize + touchPadding; // Effective hit area size
+
+        // Helper to render icon for custom controls
+        function renderIcon(ctx, left, top, styleOverride, fabricObject, iconImg, iconName) {
+            if (!controlsIconLoaded[iconName]) {
+                // Draw a placeholder if icon not loaded, for debugging
+                // ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                // ctx.fillRect(left - controlSize / 2, top - controlSize / 2, controlSize, controlSize);
+                return;
+            }
+            ctx.save();
+            ctx.translate(left, top);
+            // No rotation for these corner icons, they stay fixed relative to screen
+            // ctx.rotate(fabric.util.degreesToRadians(fabricObject.angle)); 
+            ctx.drawImage(iconImg, -controlSize / 2, -controlSize / 2, controlSize, controlSize);
+            ctx.restore();
+        }
+        
+        // Delete control (top-left)
+        fabric.Object.prototype.controls.deleteControl = new fabric.Control({
+            x: -0.5, y: -0.5, // Relative to object's bounding box
+            offsetX: -controlSize / 2, // Offset to position it outside the corner
+            offsetY: -controlSize / 2,
+            cursorStyle: 'pointer',
+            actionHandler: function(eventData, transformData, x, y) {
+                const target = transformData.target;
+                if (target.canvas) {
+                    target.canvas.remove(target);
+                    target.canvas.discardActiveObject(); // Important after removing
+                    target.canvas.requestRenderAll();
+                    handleStampSelection(null); 
+                }
+                return true;
+            },
+            render: function(ctx, left, top, styleOverride, fabricObject) {
+                renderIcon(ctx, left, top, styleOverride, fabricObject, deleteControlImg, 'delete');
+            },
+            cornerSize: finalControlHitSize // This is the effective size for hit detection
+        });
+
+        // Clone control (top-right)
+        fabric.Object.prototype.controls.cloneControl = new fabric.Control({
+            x: 0.5, y: -0.5,
+            offsetX: controlSize / 2, 
+            offsetY: -controlSize / 2,
+            cursorStyle: 'pointer',
+            actionHandler: function(eventData, transformData, x, y) {
+                const target = transformData.target;
+                if (target.canvas) {
+                    target.clone((clonedObj) => {
+                        clonedObj.set({
+                            left: target.left + (20 / target.canvas.getZoom()),
+                            top: target.top + (20 / target.canvas.getZoom()),
+                        });
+                        target.canvas.add(clonedObj);
+                        target.canvas.setActiveObject(clonedObj); 
+                        target.canvas.requestRenderAll();
+                    });
+                }
+                return true;
+            },
+            render: function(ctx, left, top, styleOverride, fabricObject) {
+                renderIcon(ctx, left, top, styleOverride, fabricObject, cloneControlImg, 'clone');
+            },
+            cornerSize: finalControlHitSize
+        });
+
+        // Apply controls to Image objects (stamps)
+        fabric.Image.prototype.set({
+            borderColor: '#3b82f6', 
+            cornerColor: '#3b82f6',
+            cornerSize: 12, 
+            transparentCorners: false,
+            hasRotatingPoint: true,
+            rotatingPointOffset: 30, 
+            cornerStyle: 'circle',
+            // Define which controls are visible for stamps
+            // Standard controls: tl, tr, bl, br (scaling), mtr (rotation)
+            // Custom controls: deleteControl, cloneControl
+            controls: {
+                tl: fabric.Object.prototype.controls.tl,
+                tr: fabric.Object.prototype.controls.tr,
+                bl: fabric.Object.prototype.controls.bl,
+                br: fabric.Object.prototype.controls.br,
+                mtr: fabric.Object.prototype.controls.mtr,
+                deleteControl: fabric.Object.prototype.controls.deleteControl,
+                cloneControl: fabric.Object.prototype.controls.cloneControl,
+            }
+        });
+        
+        // Global setting for better touch on small controls
+        fabric.Object.prototype.set({
+            perPixelTargetFind: true, 
+        });
+    }
+
+
+    function initializeFabricCanvas() {
+        fabricCanvas = new fabric.Canvas(canvasElement, {
+            backgroundColor: '#ffffff', 
+            preserveObjectStacking: true,
+        });
+        adjustCanvasSizeAndBackground(); 
+
+        fabricCanvas.on('mouse:wheel', function(opt) {
+            if (!currentDocument) return;
+            var delta = opt.e.deltaY;
+            var zoom = fabricCanvas.getZoom();
+            zoom *= 0.999 ** delta;
+            if (zoom > 10) zoom = 10;
+            if (zoom < 0.1) zoom = 0.1;
+            fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+            opt.e.preventDefault();
+            opt.e.stopPropagation();
+        });
+
+        fabricCanvas.on('mouse:down', function(opt) {
+            var evt = opt.e;
+            if (evt.altKey === true && currentDocument) { // Canvas Panning
+                this.isDragging = true; // This flag is for CANVAS dragging (panning)
+                this.selection = false; // Disable OBJECT selection during canvas pan
+                this.lastPosX = evt.clientX;
+                this.lastPosY = evt.clientY;
+                canvasElement.style.cursor = 'grabbing';
+            }
+            // For object dragging, Fabric.js handles it if opt.target is draggable and selection is true
+        });
+
+        fabricCanvas.on('mouse:move', function(opt) {
+            if (this.isDragging) { // Canvas Panning
+                var e = opt.e;
+                var vpt = this.viewportTransform;
+                vpt[4] += e.clientX - this.lastPosX;
+                vpt[5] += e.clientY - this.lastPosY;
+                this.requestRenderAll();
+                this.lastPosX = e.clientX;
+                this.lastPosY = e.clientY;
+            }
+            // Fabric.js should handle object hoverCursor automatically.
+            // We don't need to manually set canvasElement.style.cursor here for 'move'
+            // as stamp objects have hoverCursor: 'move'.
+        });
+        
+        fabricCanvas.on('mouse:out', function(opt) {
+             if (!this.isDragging) { // Only reset if not panning
+                 canvasElement.style.cursor = 'default';
+             }
+        });
+
+        fabricCanvas.on('mouse:over', function(opt) {
+            if (opt.target && opt.target.selectable && opt.target !== currentDocument?.fabricObject) {
+                // opt.target.hoverCursor is 'move' for stamps, Fabric handles this
+            } else {
+                 canvasElement.style.cursor = 'default';
+            }
+        });
+
+
+        fabricCanvas.on('mouse:up', function(opt) {
+            if (this.isDragging) { // Canvas Panning
+                this.setViewportTransform(this.viewportTransform);
+                this.isDragging = false;
+                this.selection = true; // Re-enable OBJECT selection
+                canvasElement.style.cursor = 'default';
+            }
+        });
+
+        fabricCanvas.on('selection:created', (e) => handleStampSelection(e.target));
+        fabricCanvas.on('selection:updated', (e) => handleStampSelection(e.target));
+        fabricCanvas.on('selection:cleared', () => handleStampSelection(null));
+    }
+
+    function setupEventListeners() {
+        docFileInput.addEventListener('change', handleDocumentUpload);
+        stampFileInput.addEventListener('change', handleStampUpload);
+        stampOpacitySlider.addEventListener('input', updateStampOpacity);
+        downloadBtn.addEventListener('click', downloadCanvas);
+        closeModalBtn.addEventListener('click', closeModal);
+
+        zoomInBtn.addEventListener('click', () => {
+            if (!currentDocument) return;
+            let currentZoom = fabricCanvas.getZoom();
+            fabricCanvas.setZoom(currentZoom * 1.2);
+        });
+        zoomOutBtn.addEventListener('click', () => {
+            if (!currentDocument) return;
+            let currentZoom = fabricCanvas.getZoom();
+            fabricCanvas.setZoom(currentZoom / 1.2);
+        });
+        resetZoomBtn.addEventListener('click', resetCanvasView);
+    }
+    
+    function resetCanvasView() {
+        if (!fabricCanvas) return;
+        fabricCanvas.setViewportTransform(fabric.iMatrix.concat());
+        adjustCanvasSizeAndBackground(); 
+    }
+
+    function adjustCanvasSizeAndBackground() {
+        if (!canvasContainerParent || !fabricCanvas) return; 
+        const containerWidth = canvasContainerParent.offsetWidth - 4; 
+        const containerHeight = canvasContainerParent.offsetHeight - 4;
+
+        if (currentDocument && currentDocument.fabricObject) {
+            const doc = currentDocument.fabricObject;
+            const docOriginalWidth = currentDocument.originalWidth;
+            const docOriginalHeight = currentDocument.originalHeight;
+            const scale = Math.min(containerWidth / docOriginalWidth, containerHeight / docOriginalHeight, 1); 
+            const newCanvasWidth = docOriginalWidth * scale;
+            const newCanvasHeight = docOriginalHeight * scale;
+            fabricCanvas.setWidth(newCanvasWidth);
+            fabricCanvas.setHeight(newCanvasHeight);
+            doc.set({
+                scaleX: scale, scaleY: scale, left: 0, top: 0,
+                selectable: false, evented: false,
+            });
+            if (!fabricCanvas.getObjects().includes(doc)) {
+                 fabricCanvas.add(doc);
+            }
+            doc.moveTo(0); 
+        } else {
+            fabricCanvas.setWidth(10); 
+            fabricCanvas.setHeight(10);
+            const bg = fabricCanvas.getObjects().find(obj => obj === currentDocument?.fabricObject);
+            if (bg) fabricCanvas.remove(bg);
+            currentDocument = null;
+        }
+        fabricCanvas.renderAll();
+    }
+
+    function setDocumentAsBackground(imgFabricObject) {
+        if (currentDocument && currentDocument.fabricObject) {
+            fabricCanvas.remove(currentDocument.fabricObject);
+        }
+        currentDocument = {
+            fabricObject: imgFabricObject,
+            originalWidth: imgFabricObject.width,
+            originalHeight: imgFabricObject.height
+        };
+        canvasPlaceholder.classList.add('hidden');
+        canvasElement.classList.remove('hidden'); 
+        resetCanvasView(); 
+        updateControlsState();
+    }
+
+    async function handleDocumentUpload(event) {
+        const file = event.target.files[0];
+        if (!file) {
+            docFileNameDisplay.textContent = '未选择文件'; return;
+        }
+        docFileNameDisplay.textContent = file.name;
+        docFileNameDisplay.title = file.name; 
+        clearAllStamps();
+        const fileType = file.type;
+        const reader = new FileReader();
+
+        if (fileType.startsWith('image/')) {
+            reader.onload = (e) => fabric.Image.fromURL(e.target.result, setDocumentAsBackground, { crossOrigin: 'anonymous' });
+            reader.readAsDataURL(file);
+        } else if (fileType === 'application/pdf') {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const page = await pdf.getPage(1); 
+                const viewport = page.getViewport({ scale: 2.0 }); 
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = viewport.width; offscreenCanvas.height = viewport.height;
+                await page.render({ canvasContext: offscreenCanvas.getContext('2d'), viewport: viewport }).promise;
+                fabric.Image.fromURL(offscreenCanvas.toDataURL('image/png'), setDocumentAsBackground, { crossOrigin: 'anonymous' });
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                showMessage('无法加载PDF文件: ' + (error.message || error));
+                resetDocumentState();
+            }
+        } else {
+            showMessage('不支持的文件格式。请上传图片或PDF。');
+            resetDocumentState();
+        }
+    }
+    
+    function resetDocumentState() {
+        docFileInput.value = '';
+        docFileNameDisplay.textContent = '\u00A0'; 
+        if (currentDocument && currentDocument.fabricObject) {
+            fabricCanvas.remove(currentDocument.fabricObject);
+        }
+        currentDocument = null;
+        clearAllStamps();
+        resetCanvasView(); 
+        canvasPlaceholder.classList.remove('hidden'); 
+        canvasElement.classList.add('hidden'); 
+        updateControlsState();
+    }
+
+    function clearAllStamps() {
+        const objects = fabricCanvas.getObjects().filter(obj => obj !== currentDocument?.fabricObject);
+        objects.forEach(obj => fabricCanvas.remove(obj));
+        fabricCanvas.discardActiveObject();
+        fabricCanvas.renderAll();
+    }
+
+    function handleStampUpload(event) {
+        const file = event.target.files[0];
+        if (!file) {
+            stampFileNameDisplay.textContent = '未选择印章'; return;
+        }
+        stampFileNameDisplay.textContent = file.name;
+        stampFileNameDisplay.title = file.name;
+        if (!file.type.startsWith('image/')) {
+            showMessage('印章必须是图片格式。');
+            stampFileInput.value = ''; stampFileNameDisplay.textContent = '\u00A0';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => fabric.Image.fromURL(e.target.result, addStampToCanvas, { crossOrigin: 'anonymous' });
+        reader.readAsDataURL(file);
+    }
+
+    function addStampToCanvas(stampImg) {
+        let availableWidth = fabricCanvas.getWidth() / fabricCanvas.getZoom();
+        let availableHeight = fabricCanvas.getHeight() / fabricCanvas.getZoom();
+        
+        const desiredMinVisualSize = 80; // px, min dimension of stamp on canvas
+        const maxCanvasPercent = 0.30; // stamp's largest dimension shouldn't exceed 30% of canvas's smaller dimension
+
+        let scale;
+        if (stampImg.width > stampImg.height) {
+            scale = (availableWidth * maxCanvasPercent) / stampImg.width;
+        } else {
+            scale = (availableHeight * maxCanvasPercent) / stampImg.height;
+        }
+        
+        // Ensure minimum visual size
+        if (Math.max(stampImg.width * scale, stampImg.height * scale) < desiredMinVisualSize) {
+             scale = desiredMinVisualSize / Math.min(stampImg.width, stampImg.height);
+        }
+        
+        // Cap scale to avoid extreme upscaling of tiny images, or if it's already large enough
+        scale = Math.min(scale, 1.5); // Allow up to 150% of original size
+        scale = Math.max(scale, 0.1); // Absolute minimum scale
+
+        const viewportCenter = fabricCanvas.getCenter();
+        const initialLeft = viewportCenter.left - (stampImg.width * scale / 2);
+        const initialTop = viewportCenter.top - (stampImg.height * scale / 2);
+
+        stampImg.set({
+            left: initialLeft, top: initialTop,
+            scaleX: scale, scaleY: scale,
+            opacity: parseFloat(stampOpacitySlider.value) || 0.9,
+            selectable: true, // CRITICAL for dragging and controls
+            evented: true,    // CRITICAL for events
+            hoverCursor: 'move',
+            lockMovementX: false, // Ensure not locked
+            lockMovementY: false,
+            // Other control-related properties are set via fabric.Image.prototype.set in overrideFabricControls
+        });
+        fabricCanvas.add(stampImg);
+        fabricCanvas.setActiveObject(stampImg); 
+        fabricCanvas.renderAll();
+        updateControlsState(); 
+    }
+
+    function handleStampSelection(stamp) {
+        if (stamp && stamp !== currentDocument?.fabricObject) {
+            stampOpacitySlider.value = stamp.get('opacity');
+        } else { // No stamp selected or document selected
+             stampOpacitySlider.value = 0.9; // Reset or default
+        }
+        updateControlsState();
+    }
+
+    function updateStampOpacity(event) {
+        const opacity = parseFloat(event.target.value);
+        const activeObj = fabricCanvas.getActiveObject();
+        if (activeObj && activeObj !== currentDocument?.fabricObject) {
+            activeObj.set('opacity', opacity);
+            fabricCanvas.renderAll();
+        }
+    }
+
+    function downloadCanvas() {
+        if (!currentDocument) {
+            showMessage("请先上传并处理文档。"); return;
+        }
+        fabricCanvas.discardActiveObject(); 
+        const currentVpt = fabricCanvas.viewportTransform.slice();
+        fabricCanvas.setViewportTransform(fabric.iMatrix.concat());
+        let exportMultiplier = 1;
+        if (currentDocument.fabricObject && currentDocument.fabricObject.scaleX > 0) {
+            exportMultiplier = 1 / currentDocument.fabricObject.scaleX;
+        } else {
+            console.warn("Could not determine document scale for export. Defaulting to multiplier 1.");
+        }
+        const dataURL = fabricCanvas.toDataURL({
+            format: 'png', quality: 1.0, multiplier: exportMultiplier, 
+        });
+        fabricCanvas.setViewportTransform(currentVpt);
+        fabricCanvas.renderAll();
+        const link = document.createElement('a');
+        link.download = '盖章文档-' + Date.now() + '.png';
+        link.href = dataURL;
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        showMessage("文件已开始下载！");
+    }
+
+    function updateControlsState() {
+        const docLoaded = !!currentDocument;
+        const activeObject = fabricCanvas ? fabricCanvas.getActiveObject() : null;
+        const stampSelected = !!(activeObject && activeObject !== currentDocument?.fabricObject);
+
+        zoomInBtn.disabled = !docLoaded;
+        zoomOutBtn.disabled = !docLoaded;
+        resetZoomBtn.disabled = !docLoaded;
+        zoomControlsContainer.classList.toggle('hidden', !docLoaded);
+
+        stampFileInput.disabled = !docLoaded;
+        stampFileDisabledOverlay.classList.toggle('hidden', docLoaded);
+        
+        stampOpacitySlider.disabled = !stampSelected;
+        stampOpacityDisabledOverlay.classList.toggle('hidden', stampSelected);
+
+        stampActionPlaceholder.classList.toggle('hidden', stampSelected);
+        downloadBtn.disabled = !docLoaded; 
+    }
+
+    function showMessage(message) {
+        messageText.textContent = message;
+        messageModal.classList.remove('hidden');
+        messageModal.classList.add('flex');
+    }
+
+    function closeModal() {
+        messageModal.classList.add('hidden');
+        messageModal.classList.remove('flex');
+    }
+
+</script>
+</body>
+</html>
