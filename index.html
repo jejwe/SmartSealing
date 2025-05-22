@@ -172,12 +172,27 @@
     const deleteIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23EF4444'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z' clip-rule='evenodd' /%3E%3C/svg%3E";
     const cloneIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2322C55E'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z' clip-rule='evenodd' /%3E%3C/svg%3E";
 
-    let deleteControlImg = new Image(); // Use new Image() for onload
+    let deleteControlImg = new Image(); 
     let cloneControlImg = new Image();
     let controlsIconLoaded = { delete: false, clone: false };
 
-    deleteControlImg.onload = () => { controlsIconLoaded.delete = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
-    cloneControlImg.onload = () => { controlsIconLoaded.clone = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
+    deleteControlImg.onload = () => { 
+        console.log("Delete icon loaded");
+        controlsIconLoaded.delete = true; 
+        if (fabricCanvas) {
+            fabricCanvas.requestRenderAll(); 
+            console.log("Requested render for delete icon");
+        }
+    };
+    cloneControlImg.onload = () => { 
+        console.log("Clone icon loaded");
+        controlsIconLoaded.clone = true; 
+        if (fabricCanvas) {
+            fabricCanvas.requestRenderAll();
+            console.log("Requested render for clone icon");
+        }
+    };
+    // Set src AFTER onload has been defined
     deleteControlImg.src = deleteIconSVG;
     cloneControlImg.src = cloneIconSVG;
 
@@ -228,10 +243,17 @@
         // Helper to render icon for custom controls
         function renderIcon(ctx, left, top, styleOverride, fabricObject, iconImg, iconName) {
             if (!controlsIconLoaded[iconName]) {
-                // Draw a placeholder if icon not loaded, for debugging
-                // ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                // ctx.fillRect(left - controlSize / 2, top - controlSize / 2, controlSize, controlSize);
-                return;
+                // Draw a placeholder if icon not loaded
+                ctx.save();
+                ctx.translate(left, top);
+                // Determine color based on iconName for better visual debugging
+                ctx.fillStyle = (iconName === 'delete') ? 'rgba(255, 0, 0, 0.5)' : 'rgba(0, 255, 0, 0.5)'; // Red for delete, Green for clone
+                ctx.fillRect(-controlSize / 2, -controlSize / 2, controlSize, controlSize); // Draw a square
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(-controlSize / 2, -controlSize / 2, controlSize, controlSize); // Add a border
+                ctx.restore();
+                return; // Return because the actual icon isn't loaded, placeholder is drawn.
             }
             ctx.save();
             ctx.translate(left, top);
@@ -248,12 +270,16 @@
             offsetY: -controlSize / 2,
             cursorStyle: 'pointer',
             actionHandler: function(eventData, transformData, x, y) {
+                console.log("Delete actionHandler triggered for target:", transformData.target);
                 const target = transformData.target;
-                if (target.canvas) {
+                if (target && target.canvas) {
                     target.canvas.remove(target);
-                    target.canvas.discardActiveObject(); // Important after removing
+                    target.canvas.discardActiveObject();
                     target.canvas.requestRenderAll();
                     handleStampSelection(null); 
+                    console.log("Delete action performed.");
+                } else {
+                    console.error("Delete actionHandler: target or target.canvas is missing. Target:", target);
                 }
                 return true;
             },
@@ -270,17 +296,24 @@
             offsetY: -controlSize / 2,
             cursorStyle: 'pointer',
             actionHandler: function(eventData, transformData, x, y) {
+                console.log("Clone actionHandler triggered for target:", transformData.target);
                 const target = transformData.target;
-                if (target.canvas) {
+                if (target && target.canvas) {
+                    const currentZoom = target.canvas.getZoom();
                     target.clone((clonedObj) => {
                         clonedObj.set({
-                            left: target.left + (20 / target.canvas.getZoom()),
-                            top: target.top + (20 / target.canvas.getZoom()),
+                            left: target.left + (20 / currentZoom), // Ensure consistent visual offset
+                            top: target.top + (20 / currentZoom),   // Ensure consistent visual offset
+                            opacity: target.opacity, // Explicitly clone opacity
+                            // Other properties like angle, scaleX, scaleY are cloned by default
                         });
                         target.canvas.add(clonedObj);
                         target.canvas.setActiveObject(clonedObj); 
                         target.canvas.requestRenderAll();
-                    });
+                        console.log("Clone action performed. New object:", clonedObj);
+                    }, ['selectable', 'evented', 'hoverCursor', 'opacity', 'lockMovementX', 'lockMovementY']); // pass properties to clone
+                } else {
+                    console.error("Clone actionHandler: target or target.canvas is missing. Target:", target);
                 }
                 return true;
             },
@@ -366,20 +399,9 @@
             // as stamp objects have hoverCursor: 'move'.
         });
         
-        fabricCanvas.on('mouse:out', function(opt) {
-             if (!this.isDragging) { // Only reset if not panning
-                 canvasElement.style.cursor = 'default';
-             }
-        });
-
-        fabricCanvas.on('mouse:over', function(opt) {
-            if (opt.target && opt.target.selectable && opt.target !== currentDocument?.fabricObject) {
-                // opt.target.hoverCursor is 'move' for stamps, Fabric handles this
-            } else {
-                 canvasElement.style.cursor = 'default';
-            }
-        });
-
+        // Removed custom 'mouse:out' and 'mouse:over' handlers to let Fabric.js manage hover cursors.
+        // Fabric.js should handle the hoverCursor property of objects automatically on its upperCanvasEl.
+        // The panning logic in mouse:down and mouse:up will still handle 'grabbing' and reset to 'default' post-pan.
 
         fabricCanvas.on('mouse:up', function(opt) {
             if (this.isDragging) { // Canvas Panning
