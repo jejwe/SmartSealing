@@ -125,6 +125,8 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         确认并下载
                     </button>
+                    <button id="addTestRectBtn" class="mt-2 w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md shadow-lg">Add Test Rect (Debug)</button>
+                    <button id="logActiveSealBtn" class="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-md shadow-lg">Log Active Seal State</button>
                 </div>
             </div>
         </div>
@@ -172,12 +174,27 @@
     const deleteIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23EF4444'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z' clip-rule='evenodd' /%3E%3C/svg%3E";
     const cloneIconSVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2322C55E'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z' clip-rule='evenodd' /%3E%3C/svg%3E";
 
-    let deleteControlImg = new Image(); // Use new Image() for onload
+    let deleteControlImg = new Image(); 
     let cloneControlImg = new Image();
     let controlsIconLoaded = { delete: false, clone: false };
 
-    deleteControlImg.onload = () => { controlsIconLoaded.delete = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
-    cloneControlImg.onload = () => { controlsIconLoaded.clone = true; if (fabricCanvas) fabricCanvas.requestRenderAll(); };
+    deleteControlImg.onload = () => { 
+        console.log("Delete icon loaded");
+        controlsIconLoaded.delete = true; 
+        if (fabricCanvas) {
+            fabricCanvas.requestRenderAll(); 
+            console.log("Requested render for delete icon");
+        }
+    };
+    cloneControlImg.onload = () => { 
+        console.log("Clone icon loaded");
+        controlsIconLoaded.clone = true; 
+        if (fabricCanvas) {
+            fabricCanvas.requestRenderAll();
+            console.log("Requested render for clone icon");
+        }
+    };
+    // Set src AFTER onload has been defined
     deleteControlImg.src = deleteIconSVG;
     cloneControlImg.src = cloneIconSVG;
 
@@ -208,10 +225,83 @@
     const zoomControlsContainer = document.getElementById('zoomControlsContainer');
 
     window.onload = () => {
+        console.log('Fabric.js version:', fabric.version); // Log Fabric.js version
         initializeFabricCanvas();
         setupEventListeners();
         updateControlsState();
         overrideFabricControls(); // Call this after canvas is initialized
+
+        const addTestRectBtn = document.getElementById('addTestRectBtn');
+        if (addTestRectBtn) {
+            addTestRectBtn.addEventListener('click', () => {
+                if (!fabricCanvas) {
+                    console.error('Test Rect: Fabric canvas not initialized.');
+                    alert('Test Rect: Fabric canvas not initialized.');
+                    return;
+                }
+                if (!currentDocument) {
+                     console.warn('Test Rect: No document loaded. Adding rect to default small canvas.');
+                     alert('Test Rect: No document loaded. Please load a document first for better testing context, though rect will be added.');
+                }
+                console.log('Adding test rectangle...');
+                const testRect = new fabric.Rect({
+                    left: 50,
+                    top: 50,
+                    fill: 'purple',
+                    width: 80,
+                    height: 80,
+                    selectable: true,
+                    evented: true,
+                    // For this test, we want to ensure it uses the most basic default controls
+                    // by not defining a 'controls' property here, thus inheriting from fabric.Object.prototype
+                    // or its own Rect defaults if they differ.
+                });
+                fabricCanvas.add(testRect);
+                fabricCanvas.setActiveObject(testRect); // Make it active
+                fabricCanvas.renderAll();
+                console.log('Test rectangle added and set active. Is it interactive?');
+                console.log('Test Rect properties:', {
+                    selectable: testRect.selectable,
+                    evented: testRect.evented,
+                    hasControls: testRect.hasControls,
+                    controls: testRect.controls // Log the actual controls object assigned by Fabric
+                });
+                 alert('Purple Test Rectangle added. Check console and try to interact with it (select, drag, resize, rotate).');
+            });
+        }
+
+        const logActiveSealBtn = document.getElementById('logActiveSealBtn');
+        if (logActiveSealBtn) {
+            logActiveSealBtn.addEventListener('click', () => {
+                if (!fabricCanvas) {
+                    console.error('Log Active Seal: Fabric canvas not initialized.');
+                    alert('Log Active Seal: Fabric canvas not initialized.');
+                    return;
+                }
+                const activeObject = fabricCanvas.getActiveObject();
+                if (activeObject && activeObject !== currentDocument?.fabricObject) { // Check if it's a seal
+                    console.log('--- Active Seal State ---');
+                    console.log('Object:', activeObject);
+                    console.log('Selectable:', activeObject.selectable);
+                    console.log('Evented:', activeObject.evented);
+                    console.log('Has Controls:', activeObject.hasControls);
+                    console.log('Controls Object:', activeObject.controls);
+                    console.log('Left/Top:', activeObject.left, activeObject.top);
+                    console.log('ScaleX/ScaleY:', activeObject.scaleX, activeObject.scaleY);
+                    console.log('Angle:', activeObject.angle);
+                    console.log('Opacity:', activeObject.opacity);
+                    console.log('perPixelTargetFind:', activeObject.perPixelTargetFind);
+                    console.log('-------------------------');
+                    alert('Active seal state logged to console.');
+                } else if (activeObject === currentDocument?.fabricObject) {
+                    console.log('The currently selected object is the document background.');
+                    alert('The currently selected object is the document background. Select a seal first.');
+                } else {
+                    console.log('No seal currently selected.');
+                    alert('No seal currently selected.');
+                }
+            });
+        }
     };
 
     window.onresize = () => {
@@ -228,10 +318,17 @@
         // Helper to render icon for custom controls
         function renderIcon(ctx, left, top, styleOverride, fabricObject, iconImg, iconName) {
             if (!controlsIconLoaded[iconName]) {
-                // Draw a placeholder if icon not loaded, for debugging
-                // ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                // ctx.fillRect(left - controlSize / 2, top - controlSize / 2, controlSize, controlSize);
-                return;
+                // Draw a placeholder if icon not loaded
+                ctx.save();
+                ctx.translate(left, top);
+                // Determine color based on iconName for better visual debugging
+                ctx.fillStyle = (iconName === 'delete') ? 'rgba(255, 0, 0, 0.5)' : 'rgba(0, 255, 0, 0.5)'; // Red for delete, Green for clone
+                ctx.fillRect(-controlSize / 2, -controlSize / 2, controlSize, controlSize); // Draw a square
+                ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(-controlSize / 2, -controlSize / 2, controlSize, controlSize); // Add a border
+                ctx.restore();
+                return; // Return because the actual icon isn't loaded, placeholder is drawn.
             }
             ctx.save();
             ctx.translate(left, top);
@@ -248,17 +345,25 @@
             offsetY: -controlSize / 2,
             cursorStyle: 'pointer',
             actionHandler: function(eventData, transformData, x, y) {
+                console.log('Delete control actionHandler invoked. Target:', transformData.target);
+                alert('Delete actionHandler reached!'); // For immediate visual feedback
                 const target = transformData.target;
-                if (target.canvas) {
+                if (target && target.canvas) {
                     target.canvas.remove(target);
-                    target.canvas.discardActiveObject(); // Important after removing
+                    target.canvas.discardActiveObject();
                     target.canvas.requestRenderAll();
                     handleStampSelection(null); 
+                    console.log("Delete action performed.");
+                } else {
+                    console.error("Delete actionHandler: target or target.canvas is missing. Target:", target);
                 }
                 return true;
             },
             render: function(ctx, left, top, styleOverride, fabricObject) {
-                renderIcon(ctx, left, top, styleOverride, fabricObject, deleteControlImg, 'delete');
+                // renderIcon(ctx, left, top, styleOverride, fabricObject, deleteControlImg, 'delete'); // Original
+                ctx.fillStyle = 'red';
+                ctx.fillRect(left - 10, top - 10, 20, 20); // Draw a simple red square
+                console.log('Rendering simplified delete control at', left, top);
             },
             cornerSize: finalControlHitSize // This is the effective size for hit detection
         });
@@ -270,22 +375,33 @@
             offsetY: -controlSize / 2,
             cursorStyle: 'pointer',
             actionHandler: function(eventData, transformData, x, y) {
+                console.log('Clone control actionHandler invoked. Target:', transformData.target);
+                alert('Clone actionHandler reached!'); // For immediate visual feedback
                 const target = transformData.target;
-                if (target.canvas) {
+                if (target && target.canvas) {
+                    const currentZoom = target.canvas.getZoom();
                     target.clone((clonedObj) => {
                         clonedObj.set({
-                            left: target.left + (20 / target.canvas.getZoom()),
-                            top: target.top + (20 / target.canvas.getZoom()),
+                            left: target.left + (20 / currentZoom), // Ensure consistent visual offset
+                            top: target.top + (20 / currentZoom),   // Ensure consistent visual offset
+                            opacity: target.opacity, // Explicitly clone opacity
+                            // Other properties like angle, scaleX, scaleY are cloned by default
                         });
                         target.canvas.add(clonedObj);
                         target.canvas.setActiveObject(clonedObj); 
                         target.canvas.requestRenderAll();
-                    });
+                        console.log("Clone action performed. New object:", clonedObj);
+                    }, ['selectable', 'evented', 'hoverCursor', 'opacity', 'lockMovementX', 'lockMovementY']); // pass properties to clone
+                } else {
+                    console.error("Clone actionHandler: target or target.canvas is missing. Target:", target);
                 }
                 return true;
             },
             render: function(ctx, left, top, styleOverride, fabricObject) {
-                renderIcon(ctx, left, top, styleOverride, fabricObject, cloneControlImg, 'clone');
+                // renderIcon(ctx, left, top, styleOverride, fabricObject, cloneControlImg, 'clone'); // Original
+                ctx.fillStyle = 'green';
+                ctx.fillRect(left - 10, top - 10, 20, 20); // Draw a simple green square
+                console.log('Rendering simplified clone control at', left, top);
             },
             cornerSize: finalControlHitSize
         });
@@ -308,10 +424,26 @@
                 bl: fabric.Object.prototype.controls.bl,
                 br: fabric.Object.prototype.controls.br,
                 mtr: fabric.Object.prototype.controls.mtr,
-                deleteControl: fabric.Object.prototype.controls.deleteControl,
-                cloneControl: fabric.Object.prototype.controls.cloneControl,
+                deleteControl: fabric.Object.prototype.controls.deleteControl, // Assuming deleteControl is defined
+                cloneControl: fabric.Object.prototype.controls.cloneControl,   // Assuming cloneControl is defined
             }
         });
+        // Log the assigned controls object for verification
+        console.log('Assigned to fabric.Image.prototype.controls:', fabric.Image.prototype.controls);
+
+        // For isolating standard controls (temporary test)
+        const tempStandardControlsOnly = {
+            tl: fabric.Object.prototype.controls.tl,
+            tr: fabric.Object.prototype.controls.tr,
+            bl: fabric.Object.prototype.controls.bl,
+            br: fabric.Object.prototype.controls.br,
+            mtr: fabric.Object.prototype.controls.mtr,
+        };
+        // To test if custom controls interfere, uncomment the following line:
+        // fabric.Image.prototype.controls = tempStandardControlsOnly;
+        // if (fabric.Image.prototype.controls === tempStandardControlsOnly) {
+        //    console.log('Temporarily using standard controls only for fabric.Image');
+        // }
         
         // Global setting for better touch on small controls
         fabric.Object.prototype.set({
@@ -366,20 +498,9 @@
             // as stamp objects have hoverCursor: 'move'.
         });
         
-        fabricCanvas.on('mouse:out', function(opt) {
-             if (!this.isDragging) { // Only reset if not panning
-                 canvasElement.style.cursor = 'default';
-             }
-        });
-
-        fabricCanvas.on('mouse:over', function(opt) {
-            if (opt.target && opt.target.selectable && opt.target !== currentDocument?.fabricObject) {
-                // opt.target.hoverCursor is 'move' for stamps, Fabric handles this
-            } else {
-                 canvasElement.style.cursor = 'default';
-            }
-        });
-
+        // Removed custom 'mouse:out' and 'mouse:over' handlers to let Fabric.js manage hover cursors.
+        // Fabric.js should handle the hoverCursor property of objects automatically on its upperCanvasEl.
+        // The panning logic in mouse:down and mouse:up will still handle 'grabbing' and reset to 'default' post-pan.
 
         fabricCanvas.on('mouse:up', function(opt) {
             if (this.isDragging) { // Canvas Panning
@@ -579,6 +700,7 @@
             lockMovementY: false,
             // Other control-related properties are set via fabric.Image.prototype.set in overrideFabricControls
         });
+        console.log('Seal properties on add:', { selectable: stampImg.selectable, evented: stampImg.evented, hoverCursor: stampImg.hoverCursor });
         fabricCanvas.add(stampImg);
         fabricCanvas.setActiveObject(stampImg); 
         fabricCanvas.renderAll();
@@ -586,12 +708,39 @@
     }
 
     function handleStampSelection(stamp) {
+        console.log('handleStampSelection called. Selected object (event target):', stamp);
+        console.log('Active object on canvas (before updates):', fabricCanvas.getActiveObject());
+
         if (stamp && stamp !== currentDocument?.fabricObject) {
             stampOpacitySlider.value = stamp.get('opacity');
-        } else { // No stamp selected or document selected
+            console.log('Seal selected. Properties:', { 
+                selectable: stamp.selectable, 
+                evented: stamp.evented, 
+                perPixelTargetFind: stamp.perPixelTargetFind,
+                hasControls: stamp.hasControls // Log general control visibility
+            });
+            // Example of logging specific control visibility (optional, requires controls to be defined)
+            // if (stamp.controls) {
+            //    console.log('Seal tl control visibility:', stamp.controls.tl?.visible);
+            // }
+
+
+            // Test for perPixelTargetFind interference
+            // To test: uncomment the next two lines and observe if controls become more responsive,
+            // especially if the seal image has significant transparency near its edges or controls.
+            // stamp.perPixelTargetFind = false; 
+            // fabricCanvas.requestRenderAll();
+
+        } else { // No stamp selected or document background selected
              stampOpacitySlider.value = 0.9; // Reset or default
+             if (stamp === currentDocument?.fabricObject) {
+                console.log('Document background selected.');
+             } else {
+                console.log('Selection cleared or invalid object selected.');
+             }
         }
         updateControlsState();
+        console.log('Active object on canvas (after updates in handleStampSelection):', fabricCanvas.getActiveObject());
     }
 
     function updateStampOpacity(event) {
